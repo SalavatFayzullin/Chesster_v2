@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}Welcome{% endblock %}
+
+{% block content %}
+<div class="hero">
+    <div class="chess-board-bg"></div>
+    <div class="welcome-content">
+        <h2>Welcome to Chesster</h2>
+        <p>A chess-themed battle game where strategy meets fun!</p>
+        
+        <div class="cta-buttons">
+            {% if current_user.is_authenticated %}
+                <a href="{{ url_for('battle') }}" class="btn btn-primary">Start a Battle</a>
+                <a href="{{ url_for('profile') }}" class="btn btn-secondary">View Profile</a>
+            {% else %}
+                <a href="{{ url_for('register') }}" class="btn btn-primary">Register</a>
+                <a href="{{ url_for('login') }}" class="btn btn-secondary">Login</a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="features">
+    <div class="feature">
+        <div class="icon pawn"></div>
+        <h3>Strategic Battles</h3>
+        <p>Challenge other players to strategic battles and climb the leaderboard!</p>
+    </div>
+    <div class="feature">
+        <div class="icon knight"></div>
+        <h3>Track Progress</h3>
+        <p>Monitor your wins and losses to improve your tactical skills.</p>
+    </div>
+    <div class="feature">
+        <div class="icon king"></div>
+        <h3>Chess-Themed Design</h3>
+        <p>Enjoy a beautifully designed interface inspired by the game of chess.</p>
+    </div>
+</div>
+{% endblock %} 

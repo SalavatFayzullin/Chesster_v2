@@ -1,0 +1,10 @@
+chess_app.db
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
+venv/
+.venv/

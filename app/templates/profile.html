@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+
+{% block title %}Profile{% endblock %}
+
+{% block content %}
+<div class="profile-container">
+    <div class="profile-header">
+        <div class="profile-avatar">
+            <div class="chess-piece king"></div>
+        </div>
+        <div class="profile-info">
+            <h2>{{ user.username }}</h2>
+            <p class="profile-email">{{ user.email }}</p>
+            <p class="profile-member-since">Member since: {{ user.date_registered.strftime('%B %d, %Y') }}</p>
+        </div>
+    </div>
+    
+    <div class="stats-container">
+        <h3>Battle Statistics</h3>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-icon wins"></div>
+                <div class="stat-value">{{ user.battles_won }}</div>
+                <div class="stat-label">Battles Won</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon losses"></div>
+                <div class="stat-value">{{ user.battles_lost }}</div>
+                <div class="stat-label">Battles Lost</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon total"></div>
+                <div class="stat-value">{{ user.battles_won + user.battles_lost }}</div>
+                <div class="stat-label">Total Battles</div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon ratio"></div>
+                <div class="stat-value">
+                    {% if user.battles_lost > 0 %}
+                        {{ "%.2f"|format(user.battles_won / user.battles_lost) }}
+                    {% elif user.battles_won > 0 %}
+                        ∞
+                    {% else %}
+                        0
+                    {% endif %}
+                </div>
+                <div class="stat-label">Win/Loss Ratio</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="profile-actions">
+        <button id="joinQueueBtn" class="btn btn-primary">Join Game Queue</button>
+        <div id="queueStatus" class="queue-status" style="display:none;">
+            <p id="queueMessage">Waiting for opponent...</p>
+            <div class="loader"></div>
+            <button id="leaveQueueBtn" class="btn btn-secondary">Leave Queue</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const joinQueueBtn = document.getElementById('joinQueueBtn');
+        const leaveQueueBtn = document.getElementById('leaveQueueBtn');
+        const queueStatus = document.getElementById('queueStatus');
+        const queueMessage = document.getElementById('queueMessage');
+        let pollingInterval = null;
+        
+        joinQueueBtn.addEventListener('click', function() {
+            // Join the queue
+            fetch('/api/queue/join', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'matched') {
+                    // Immediate match found, redirect to game
+                    window.location.href = '/game/' + data.game.id;
+                } else if (data.status === 'queued' || data.status === 'already_queued') {
+                    // Show queue status and start polling
+                    joinQueueBtn.style.display = 'none';
+                    queueStatus.style.display = 'block';
+                    startPolling();
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+        
+        leaveQueueBtn.addEventListener('click', function() {
+            // Leave the queue
+            fetch('/api/queue/leave', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                stopPolling();
+                joinQueueBtn.style.display = 'block';
+                queueStatus.style.display = 'none';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        });
+        
+        function startPolling() {
+            // Check queue status every 2 seconds
+            pollingInterval = setInterval(checkQueueStatus, 2000);
+        }
+        
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+        
+        function checkQueueStatus() {
+            fetch('/api/queue/status')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'matched') {
+                    // Match found
+                    if (data.game && data.game.id) {
+                        // Game created, redirect to game
+                        stopPolling();
+                        window.location.href = '/game/' + data.game.id;
+                    } else {
+                        // Game not created yet, update message and keep polling
+                        queueMessage.textContent = 'Match found! Waiting for game to start...';
+                        // Continue polling more frequently to check when game is created
+                        if (pollingInterval) {
+                            clearInterval(pollingInterval);
+                        }
+                        // Poll more frequently (every 1 second) once a match is found
+                        pollingInterval = setInterval(checkQueueStatus, 1000);
+                    }
+                } else if (data.status === 'waiting') {
+                    // Update position in queue
+                    queueMessage.textContent = `Waiting for opponent... (Position: ${data.position})`;
+                } else if (data.status === 'not_in_queue') {
+                    // No longer in queue
+                    stopPolling();
+                    joinQueueBtn.style.display = 'block';
+                    queueStatus.style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
+        }
+    });
+</script>
+{% endblock %} 

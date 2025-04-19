@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Battle{% endblock %}
+
+{% block content %}
+<div class="battle-container">
+    <h2>Choose Your Opponent</h2>
+    
+    {% if users %}
+        <div class="opponents-list">
+            {% for opponent in users %}
+                <div class="opponent-card">
+                    <div class="opponent-avatar">
+                        <div class="chess-piece {% if loop.index % 2 == 0 %}bishop{% else %}rook{% endif %}"></div>
+                    </div>
+                    <div class="opponent-info">
+                        <h3>{{ opponent.username }}</h3>
+                        <p class="opponent-stats">
+                            <span class="wins">{{ opponent.battles_won }}</span> W / 
+                            <span class="losses">{{ opponent.battles_lost }}</span> L
+                        </p>
+                    </div>
+                    <form method="POST" action="{{ url_for('battle') }}">
+                        <input type="hidden" name="opponent" value="{{ opponent.username }}">
+                        <button type="submit" class="btn btn-battle">Challenge</button>
+                    </form>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <div class="no-opponents">
+            <p>No other users available for battle.</p>
+            <p>Invite friends to join Chesster!</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %} 
