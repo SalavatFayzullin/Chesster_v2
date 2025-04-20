@@ -2,6 +2,8 @@ from flask import Flask, render_template, redirect, url_for, flash, request, jso
 from flask_login import LoginManager, login_required, current_user, login_user, logout_user
 import os
 from datetime import datetime
+import threading
+import time
 
 # Import models
 from src.models.user import User, db
@@ -11,6 +13,9 @@ from src.models.game import Game, ChessMove
 from src.routes.auth_routes import auth_bp
 from src.routes.game_routes import game_bp
 
+# Import services
+from src.services.game_service import GameService
+
 # Initialize Flask app
 app = Flask(__name__, 
             template_folder='app/templates',
@@ -19,6 +24,11 @@ app.config['SECRET_KEY'] = 'your-secret-key'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///chesster.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['JSON_SORT_KEYS'] = False
+app.config['JSON_AS_ASCII'] = False
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_SECURE'] = False
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
 # Initialize database
 db.init_app(app)
@@ -128,7 +138,6 @@ def battle():
             return redirect(url_for('battle'))
         
         # Create a new game using our service
-        from src.services.game_service import GameService
         game = GameService.create_game(current_user.id, opponent.id)
         
         return redirect(url_for('game', game_id=game.id))
@@ -163,17 +172,55 @@ def handle_exception(e):
     if hasattr(e, 'code') and isinstance(e.code, int) and 400 <= e.code < 600:
         return e
     
-    # Log the error
+    # Log the full error with traceback
+    import traceback
     app.logger.error(f"Unhandled exception: {str(e)}")
+    app.logger.error(traceback.format_exc())
     
     # Return JSON response for API routes
     if request.path.startswith('/api/'):
-        return jsonify({"error": "Internal server error"}), 500
+        return jsonify({"error": "Internal server error", "details": str(e)}), 500
     
     # Return HTML response for web routes
     return render_template('500.html'), 500
 
+@app.before_request
+def log_request_info():
+    app.logger.debug('Headers: %s', request.headers)
+    app.logger.debug('Body: %s', request.get_data())
+    app.logger.debug('Path: %s', request.path)
+    app.logger.debug('Method: %s', request.method)
+    app.logger.debug('User authenticated: %s', current_user.is_authenticated if hasattr(current_user, 'is_authenticated') else False)
+
+# Background timer checker
+def timer_checker():
+    """Background thread to check for expired timers"""
+    print("Starting timer checker thread")
+    with app.app_context():
+        while True:
+            try:
+                # Check for expired timers
+                games_with_random_moves = GameService.check_expired_timers()
+                if games_with_random_moves:
+                    print(f"Made random moves for {len(games_with_random_moves)} games with expired timers")
+            except Exception as e:
+                print(f"Error in timer checker: {str(e)}")
+            
+            # Sleep for 1 second
+            time.sleep(1)
+
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+    
+    # Print registered routes for debugging
+    print("Registered routes:")
+    for rule in app.url_map.iter_rules():
+        print(f"{rule.rule} - Methods: {rule.methods}")
+    
+    # Start the timer checker thread
+    timer_thread = threading.Thread(target=timer_checker)
+    timer_thread.daemon = True  # This ensures the thread will exit when the main program exits
+    timer_thread.start()
+    
     app.run(debug=True)

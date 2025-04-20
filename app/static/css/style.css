@@ -558,23 +558,28 @@ main {
 }
 
 .chess-board-container {
-    margin: 2rem 0;
+    margin: 2rem auto;
     display: flex;
     justify-content: center;
+    width: 100%;
+    max-width: 500px;
 }
 
 .chess-board {
-    width: 400px;
-    height: 400px;
-    display: grid;
-    grid-template-columns: repeat(8, 1fr);
-    grid-template-rows: repeat(8, 1fr);
+    width: 100% !important;
+    position: relative;
     border: 5px solid var(--black);
+    box-sizing: border-box;
+    margin: 0 auto;
 }
 
+/* Ensure the chessboard squares are square and properly aligned */
 .chess-square {
-    width: 100%;
-    height: 100%;
+    width: 12.5% !important;
+    height: 0;
+    padding-bottom: 12.5% !important;
+    position: relative;
+    box-sizing: border-box;
 }
 
 .chess-square.white {
@@ -695,11 +700,23 @@ footer {
 
 /* Chess Board Styles */
 .chess-board {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    max-width: 500px;
+    width: 100% !important;
     margin: 0 auto;
     border: 2px solid #333;
+    box-sizing: border-box;
+}
+
+#chessboard {
+    width: 100% !important;
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+/* Clean up any inline styles that might be added by chessboard.js */
+#chessboard > div {
+    left: 0 !important;
+    width: 100% !important;
+    box-sizing: border-box;
 }
 
 /* Current Player Highlight */

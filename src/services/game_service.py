@@ -23,7 +23,9 @@ class GameService:
             black_player_id=black_player_id,
             board_state=chess.Board().fen(),
             status='active',
-            current_turn='white'
+            current_turn='white',
+            turn_time_limit=3,  # Default 60 seconds per turn
+            last_move_time=datetime.utcnow()
         )
         
         db.session.add(game)
@@ -244,4 +246,24 @@ class GameService:
             return False, None
             
         position = GameQueue.get_queue_position(user_id)
-        return True, position 
+        return True, position
+    
+    @staticmethod
+    def check_expired_timers():
+        """
+        Check all active games for expired timers and make random moves if necessary
+        Returns a list of game_ids that had random moves made
+        """
+        games_with_random_moves = []
+        
+        # Get all active games
+        active_games = Game.query.filter_by(status='active').all()
+        
+        for game in active_games:
+            if game.check_time_limit():
+                games_with_random_moves.append(game.id)
+                
+        if games_with_random_moves:
+            db.session.commit()
+            
+        return games_with_random_moves 

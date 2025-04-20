@@ -1,0 +1,121 @@
+/**
+ * Persistent Square Highlighting for Chess Game
+ */
+
+/* Make hover effect persist on chess squares */
+.square-55d63:hover {
+    box-shadow: inset 0 0 0 4px rgba(255, 255, 150, 0.8) !important;
+    position: relative !important;
+    z-index: 2 !important;
+    animation: none !important; /* Prevent animations from removing the effect */
+}
+
+/* Apply highlighting that persists after hover */
+.square-55d63 {
+    transition: box-shadow 0.05s ease-in, background-color 0.05s ease-in !important;
+}
+
+/* Make sure the hover effect stays visible when a piece is being dragged */
+body.dragging-piece .square-55d63:hover {
+    box-shadow: inset 0 0 0 4px rgba(255, 255, 150, 0.8) !important;
+}
+
+/* Create a persistent highlight state that remains after hover */
+.square-55d63:hover::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 150, 0.3);
+    pointer-events: none;
+    z-index: 1;
+    animation: fadeHighlight 5s forwards; /* Keep highlight visible for 5 seconds */
+}
+
+/* Animation to slowly fade out the highlight */
+@keyframes fadeHighlight {
+    0% { opacity: 1; }
+    90% { opacity: 0.8; }
+    100% { opacity: 0; }
+}
+
+/* Valid move highlight (green) */
+.highlight-valid {
+    box-shadow: inset 0 0 0 5px rgba(0, 255, 0, 0.9) !important;
+    background-color: rgba(0, 255, 0, 0.5) !important;
+    position: relative !important;
+    z-index: 2 !important;
+}
+
+/* Invalid move highlight (red) */
+.highlight-invalid {
+    box-shadow: inset 0 0 0 5px rgba(255, 0, 0, 0.9) !important;
+    background-color: rgba(255, 0, 0, 0.5) !important;
+    position: relative !important;
+    z-index: 2 !important;
+}
+
+/* Make highlighting more visible against different background colors */
+.white-1e1d7.highlight-valid,
+.black-3c85d.highlight-valid {
+    box-shadow: inset 0 0 0 5px rgba(0, 255, 0, 1) !important;
+    background-color: rgba(0, 255, 0, 0.7) !important;
+}
+
+.white-1e1d7.highlight-invalid,
+.black-3c85d.highlight-invalid {
+    box-shadow: inset 0 0 0 5px rgba(255, 0, 0, 1) !important;
+    background-color: rgba(255, 0, 0, 0.7) !important;
+}
+
+/* Add indicator to help color-blind users */
+.highlight-valid::after {
+    content: '✓';
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 12px;
+    color: darkgreen;
+}
+
+.highlight-invalid::after {
+    content: '✗';
+    position: absolute;
+    bottom: 2px;
+    right: 2px;
+    font-size: 12px;
+    color: darkred;
+}
+
+/* Stronger highlighting when dragging */
+body.dragging-piece .square-55d63.highlight-valid {
+    background-color: rgba(0, 255, 0, 0.7) !important;
+    box-shadow: inset 0 0 0 6px rgba(0, 255, 0, 1) !important;
+}
+
+body.dragging-piece .square-55d63.highlight-invalid {
+    background-color: rgba(255, 0, 0, 0.7) !important;
+    box-shadow: inset 0 0 0 6px rgba(255, 0, 0, 1) !important;
+}
+
+/* Make sure the highlight overlays any chess pieces */
+body.dragging-piece .square-55d63::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    pointer-events: none;
+}
+
+body.dragging-piece .square-55d63.highlight-valid::before {
+    background-color: rgba(0, 255, 0, 0.3);
+}
+
+body.dragging-piece .square-55d63.highlight-invalid::before {
+    background-color: rgba(255, 0, 0, 0.3);
+} 

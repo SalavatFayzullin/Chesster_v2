@@ -2,6 +2,7 @@ from datetime import datetime
 from src.models.user import db
 import chess  # Updated import name
 import json
+import random
 
 class Game(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -13,6 +14,8 @@ class Game(db.Model):
     current_turn = db.Column(db.String(5), default='white')  # white or black
     start_time = db.Column(db.DateTime, default=datetime.utcnow)
     end_time = db.Column(db.DateTime, nullable=True)
+    turn_time_limit = db.Column(db.Integer, default=3)  # Default time limit of 60 seconds per turn
+    last_move_time = db.Column(db.DateTime, default=datetime.utcnow)  # Timestamp of the last move
     
     # Relationships
     white_player = db.relationship('User', foreign_keys=[white_player_id])
@@ -42,7 +45,7 @@ class Game(db.Model):
         
         # Create the move object
         try:
-            if promotion:
+            if promotion and promotion.strip():
                 move = chess.Move.from_uci(f"{from_square}{to_square}{promotion}")
             else:
                 move = chess.Move.from_uci(f"{from_square}{to_square}")
@@ -53,21 +56,31 @@ class Game(db.Model):
         if move not in board.legal_moves:
             return False, "Illegal move"
         
+        # Store the move before pushing it for notation
+        try:
+            san_notation = board.san(move)
+        except Exception as e:
+            return False, f"Error calculating move notation: {str(e)}"
+        
+        # Store the current player's ID before changing the turn
+        current_player_id = self.white_player_id if self.current_turn == 'white' else self.black_player_id
+        
         # Make the move
         board.push(move)
         
         # Update game state
         self.board_state = board.fen()
         self.current_turn = 'black' if self.current_turn == 'white' else 'white'
+        self.last_move_time = datetime.utcnow()  # Update the timestamp of the last move
         
-        # Create move record
+        # Create move record with the correct player ID (the one who made the move)
         chess_move = ChessMove(
             game_id=self.id,
-            player_id=self.white_player_id if self.current_turn == 'black' else self.black_player_id,
+            player_id=current_player_id,
             from_square=from_square,
             to_square=to_square,
             promotion=promotion,
-            move_notation=board.san(move)
+            move_notation=san_notation
         )
         db.session.add(chess_move)
         
@@ -112,13 +125,65 @@ class Game(db.Model):
             'is_check': board.is_check(),
             'legal_moves': [move.uci() for move in board.legal_moves],
             'piece_map': {str(sq): str(piece) for sq, piece in board.piece_map().items()},
-            'last_move': None if not self.moves else self.moves[-1].to_dict()
+            'last_move': None if not self.moves else self.moves[-1].to_dict(),
+            'turn_time_limit': self.turn_time_limit,
+            'time_remaining': self.get_time_remaining()
         }
         
         if self.winner_id:
             state['winner'] = self.winner.username
         
         return state
+        
+    def get_time_remaining(self):
+        """Get the remaining time for the current turn in seconds"""
+        if self.status != 'active':
+            return 0
+            
+        elapsed = (datetime.utcnow() - self.last_move_time).total_seconds()
+        remaining = max(0, self.turn_time_limit - int(elapsed))
+        return remaining
+        
+    def check_time_limit(self):
+        """Check if the time limit for the current turn has expired and make a random move if necessary"""
+        if self.status != 'active':
+            return False
+            
+        if self.get_time_remaining() > 0:
+            return False
+            
+        # Time limit exceeded, make a random move
+        return self.make_random_move()
+        
+    def make_random_move(self):
+        """Make a random legal move and return whether it was successful"""
+        board = self.get_board()
+        
+        # Get all legal moves
+        legal_moves = list(board.legal_moves)
+        if not legal_moves:
+            return False
+            
+        # Select a random move
+        random_move = random.choice(legal_moves)
+        
+        # Convert move to uci format
+        from_square = chess.square_name(random_move.from_square)
+        to_square = chess.square_name(random_move.to_square)
+        promotion = random_move.promotion_char() if random_move.promotion else None
+        
+        # Make the move
+        success, _ = self.make_move(from_square, to_square, promotion)
+        
+        if success:
+            # Create a note that this was a random move due to time expiration
+            note = "Random move due to time limit expiration"
+            # Update the last move's note if it exists
+            if self.moves:
+                last_move = self.moves[-1]
+                last_move.move_notation += f" ({note})"
+                
+        return success
 
 
 class ChessMove(db.Model):

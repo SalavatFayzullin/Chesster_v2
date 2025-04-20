@@ -1,0 +1,109 @@
+/**
+ * Chess Board Fixes
+ * Additional CSS to ensure proper rendering of the chessboard for all users
+ */
+
+/* Main chessboard container */
+#chessboard {
+    width: 100% !important;
+    max-width: 600px !important;
+    margin: 0 auto !important;
+    position: relative !important;
+    display: block !important;
+    box-sizing: border-box !important;
+}
+
+/* Chessboard wrapper */
+#chessboard > div {
+    position: relative !important;
+    width: 100% !important;
+    height: 100% !important;
+    left: 0 !important;
+    top: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* Square styles */
+.square-55d63 {
+    position: relative !important;
+    float: left !important;
+    width: 12.5% !important;
+    height: 0 !important;
+    padding-bottom: 12.5% !important;
+    box-sizing: border-box !important;
+}
+
+/* Chess pieces */
+.piece-417db {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
+    background-position: center !important;
+    background-repeat: no-repeat !important;
+    background-size: contain !important;
+    z-index: 1 !important;
+}
+
+/* Fix for dragged pieces */
+body > .piece-417db {
+    width: 75px !important;
+    height: 75px !important;
+    max-width: 75px !important;
+    max-height: 75px !important;
+    z-index: 9999 !important;
+}
+
+/* Board wrapper for proper aspect ratio */
+.chess-board-container {
+    width: 100%;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 10px;
+}
+
+/* Board color fixes */
+.white-1e1d7 {
+    background-color: #eeeed2 !important;
+}
+
+.black-3c85d {
+    background-color: #769656 !important;
+}
+
+/* Highlighted square styles */
+.highlight-square {
+    box-shadow: inset 0 0 0 4px rgba(255, 255, 150, 0.8) !important;
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+/* Loading message */
+#boardLoadingError {
+    padding: 15px;
+    margin-top: 20px;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 5px;
+}
+
+/* Mobile-specific fixes */
+@media (max-width: 576px) {
+    #chessboard {
+        max-width: 100% !important;
+    }
+    
+    .chess-board-container {
+        padding: 5px;
+    }
+    
+    body > .piece-417db {
+        width: 60px !important;
+        height: 60px !important;
+        max-width: 60px !important;
+        max-height: 60px !important;
+    }
+} 

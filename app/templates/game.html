@@ -2,6 +2,11 @@
 
 {% block title %}Chess Game #{{ game.id }}{% endblock %}
 
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/square-highlight.css') }}">
+{% endblock %}
+
 {% block content %}
 <div class="game-container">
     <div class="game-header">
@@ -10,6 +15,7 @@
             <p>Started: {{ game.start_time.strftime('%B %d, %Y at %H:%M') }}</p>
             <p>Status: <span id="gameStatus">{{ game.status|capitalize }}</span></p>
             <p>Current Turn: <span id="currentTurn">{{ game.current_turn|capitalize }}</span></p>
+            <p>Time Remaining: <span id="timeRemaining">60</span> seconds</p>
         </div>
     </div>
     
@@ -41,6 +47,9 @@
     
     <div class="chess-board-container">
         <div id="chessboard" class="chess-board"></div>
+        <div id="boardLoadingError" style="display:none; color: red; text-align: center; margin-top: 20px;">
+            <p>There was an issue loading the chess board. <a href="#" id="reloadBoardBtn">Click here to try again</a>.</p>
+        </div>
     </div>
     
     <div class="game-controls">
@@ -85,6 +94,7 @@
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
+<script src="{{ url_for('static', filename='js/chessboard-fix.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
         const gameId = {{ game.id }};
@@ -96,7 +106,23 @@
                               else 'false' }};
         const gameStatus = "{{ game.status }}";
         let board = null;
-        let chess = new Chess("{{ game.board_state }}");
+        let chess = null;
+        let boardInitialized = false;
+        let selectedPiece = null;
+        // Track draggability state to avoid redundant updates
+        let isCurrentlyDraggable = isPlayerTurn && gameStatus === 'active';
+        let currentGameStatus = gameStatus;
+        
+        // Timer variables
+        let timeRemaining = 3; // Default 60 seconds
+        let timerInterval = null;
+        
+        try {
+            chess = new Chess("{{ game.board_state }}");
+        } catch (e) {
+            console.error("Error initializing chess logic:", e);
+            chess = new Chess(); // Fallback to default position
+        }
         
         // Remove player from queue when they reach the game page
         fetch('/api/queue/leave', {
@@ -105,22 +131,69 @@
                 'Content-Type': 'application/json'
             }
         })
-        .then(response => response.json())
-        .catch(error => {
-            console.error('Error leaving queue:', error);
+        .then(function(response) {
+            // Continue even if the status code isn't 200
+            return response.json().catch(function() { return {}; });  // Return empty object if JSON parsing fails
+        })
+        .catch(function(error) {
+            // Silently handle error, no need to disrupt gameplay or show error in console
+            console.debug('Queue leave handler completed');
         });
         
-        // Initialize the board
-        const config = {
-            draggable: isPlayerTurn && gameStatus === 'active',
-            position: "{{ game.board_state }}",
-            orientation: isBlackPlayer ? 'black' : 'white',
-            onDragStart: onDragStart,
-            onDrop: onDrop,
-            pieceTheme: '/static/img/pieces/{piece}.png' // Make sure you have piece images
-        };
+        // Initialize the board with error handling
+        function initializeBoard() {
+            try {
+                const config = {
+                    draggable: isPlayerTurn && gameStatus === 'active',
+                    position: "{{ game.board_state }}",
+                    orientation: isBlackPlayer ? 'black' : 'white',
+                    onDragStart: onDragStart,
+                    onDrop: onDrop,
+                    onMouseoverSquare: onMouseoverSquare,
+                    onMouseoutSquare: onMouseoutSquare,
+                    pieceTheme: '/static/img/pieces/{piece}.svg', // Using SVG pieces instead of PNG
+                    responsive: true
+                };
+                
+                // Clear existing board if it exists
+                if (board !== null) {
+                    board.clear(false);
+                }
+                
+                board = Chessboard('chessboard', config);
+                
+                // Make board globally accessible for the fix script
+                window.board = board;
+                
+                // Apply the fix right after initialization
+                if (typeof window.fixChessboard === 'function') {
+                    setTimeout(window.fixChessboard, 100);
+                }
+                
+                boardInitialized = true;
+                document.getElementById('boardLoadingError').style.display = 'none';
+            } catch (e) {
+                console.error("Error initializing chessboard:", e);
+                document.getElementById('boardLoadingError').style.display = 'block';
+                boardInitialized = false;
+            }
+        }
         
-        board = Chessboard('chessboard', config);
+        // Initialize board
+        initializeBoard();
+        
+        // Add reload button functionality
+        document.getElementById('reloadBoardBtn').addEventListener('click', function(e) {
+            e.preventDefault();
+            initializeBoard();
+        });
+        
+        // Make the board responsive to window resize
+        window.addEventListener('resize', function() {
+            if (board && typeof board.resize === 'function') {
+                board.resize();
+            }
+        });
         
         // Load move history
         loadMoveHistory();
@@ -138,6 +211,7 @@
             // Only allow the player to drag their own pieces when it's their turn
             if (gameStatus !== 'active') return false;
             if (!isPlayerTurn) return false;
+            if (!boardInitialized) return false;
             
             // Check correct color
             if ((isWhitePlayer && piece.search(/^b/) !== -1) ||
@@ -145,53 +219,118 @@
                 return false;
             }
             
+            // Store the source square for highlighting potential moves
+            selectedPiece = source;
+            
+            // Clear any existing highlights
+            document.querySelectorAll('.square-55d63').forEach(function(sq) {
+                sq.classList.remove('highlight-valid');
+                sq.classList.remove('highlight-invalid');
+            });
+            
+            // Add a class to the body to indicate dragging is in progress
+            document.body.classList.add('dragging-piece');
+            
             return true;
         }
         
         function onDrop(source, target) {
+            // Reset the selectedPiece after a move is made
+            selectedPiece = null;
+            
+            // Remove dragging class from body
+            document.body.classList.remove('dragging-piece');
+            
+            // Remove all highlight effects when a move is made
+            document.querySelectorAll('.square-55d63').forEach(function(square) {
+                square.classList.remove('highlight-valid');
+                square.classList.remove('highlight-invalid');
+            });
+            
+            // Check if the board is properly initialized
+            if (!boardInitialized) {
+                console.error("Board not properly initialized");
+                return 'snapback';
+            }
+            
             // Check if the move is legal
             const move = {
                 from: source,
                 to: target,
-                promotion: 'q' // Always promote to queen for simplicity
+                // Only include promotion when a pawn is moving to the last rank
+                promotion: isPawnPromotion(source, target) ? 'q' : undefined
             };
             
-            // Check if move is valid
+            // Check if move is valid locally
             const legalMove = chess.move(move);
             if (!legalMove) return 'snapback';
             
-            // Update the board
-            board.position(chess.fen());
+            // Store the current position before submitting
+            const currentPosition = chess.fen();
             
             // Send move to server
-            sendMove(source, target, legalMove.promotion || 'q');
+            sendMove(source, target, legalMove.promotion, currentPosition);
             
             return null;
         }
         
-        function sendMove(from, to, promotion) {
+        // Helper function to determine if a move is a pawn promotion
+        function isPawnPromotion(source, target) {
+            const piece = chess.get(source);
+            
+            // Check if it's a pawn
+            if (!piece || piece.type !== 'p') return false;
+            
+            // Check if destination is on the 8th or 1st rank
+            const targetRank = target.charAt(1);
+            return (piece.color === 'w' && targetRank === '8') || 
+                   (piece.color === 'b' && targetRank === '1');
+        }
+        
+        function sendMove(from, to, promotion, previousPosition) {
+            // Make sure we're sending the move data in the exact format expected by the API
+            const moveData = {
+                "from_square": from,
+                "to_square": to
+            };
+            
+            // Only include promotion parameter if it's actually needed
+            if (promotion) {
+                moveData.promotion = promotion;
+            }
+            
+            console.log('Sending move:', JSON.stringify(moveData));
+            
             fetch(`/api/games/${gameId}/move`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
                 },
-                body: JSON.stringify({
-                    from: from,
-                    to: to,
-                    promotion: promotion
-                })
+                credentials: 'same-origin',
+                body: JSON.stringify(moveData)
             })
-            .then(response => response.json())
-            .then(data => {
-                if (data.error) {
-                    alert(`Error: ${data.error}`);
-                } else {
-                    // Update game state
-                    refreshGameState();
+            .then(response => {
+                if (!response.ok) {
+                    // If server rejected the move, reset to previous position
+                    chess = new Chess(previousPosition);
+                    board.position(previousPosition);
+                    
+                    return response.json().then(data => {
+                        throw new Error(data.error || `Server returned ${response.status}`);
+                    });
                 }
+                return response.json();
+            })
+            .then(data => {
+                // Update game state
+                refreshGameState();
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('Error making move:', error);
+                alert(`Failed to make move: ${error.message}`);
+                // Reset the board to the last valid position
+                refreshGameState();
             });
         }
         
@@ -199,27 +338,109 @@
             fetch(`/api/games/${gameId}`)
             .then(response => response.json())
             .then(data => {
+                // If board was not initialized, try again
+                if (!boardInitialized) {
+                    initializeBoard();
+                    return;
+                }
+                
                 if (data.game) {
-                    updateGameState(data.game);
+                    // Update internal chess.js state
+                    chess = new Chess(data.game.board);
+                    
+                    // Update only the pieces position without redrawing the tiles
+                    if (board && typeof board.position === 'function') {
+                        board.position(data.game.board, false); // false = don't animate
+                    }
+                    
+                    // Update turn indicator
+                    document.getElementById('currentTurn').textContent = 
+                        data.game.current_turn.charAt(0).toUpperCase() + data.game.current_turn.slice(1);
+                    
+                    // Update status
+                    document.getElementById('gameStatus').textContent = 
+                        data.game.status.charAt(0).toUpperCase() + data.game.status.slice(1);
+                    
+                    // Update timer and reset interval
+                    if (data.game.status === 'active') {
+                        // Clear existing timer
+                        if (timerInterval) {
+                            clearInterval(timerInterval);
+                        }
+                        
+                        // Update initial time remaining
+                        timeRemaining = data.game.time_remaining;
+                        updateTimerDisplay();
+                        
+                        // Start timer countdown
+                        startTimerCountdown();
+                    } else {
+                        // Clear timer if game is over
+                        if (timerInterval) {
+                            clearInterval(timerInterval);
+                            timerInterval = null;
+                        }
+                    }
+                    
+                    // Update game message
+                    updateGameMessage(data.game);
+                    
+                    // Highlight players based on current turn
+                    document.querySelector('.white-player').classList.toggle('current-player', data.game.current_turn === 'white');
+                    document.querySelector('.black-player').classList.toggle('current-player', data.game.current_turn === 'black');
+                    
+                    // Refresh move history if needed
+                    if (data.game.last_move) {
+                        loadMoveHistory();
+                    }
+                    
+                    // Hide control buttons if game is over
+                    if (data.game.status !== 'active') {
+                        document.getElementById('resignBtn').style.display = 'none';
+                        document.getElementById('offerDrawBtn').style.display = 'none';
+                        document.querySelector('.game-buttons').innerHTML = 
+                            '<a href="{{ url_for('profile') }}" class="btn btn-primary">Back to Profile</a>';
+                    }
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
+                console.error('Error refreshing game state:', error);
             });
         }
         
-        function updateGameState(game) {
-            // Update board position
-            board.position(game.board);
-            chess = new Chess(game.board);
+        // Function to start the timer countdown
+        function startTimerCountdown() {
+            if (timerInterval) {
+                clearInterval(timerInterval);
+            }
             
-            // Update turn indicator
-            document.getElementById('currentTurn').textContent = game.current_turn.charAt(0).toUpperCase() + game.current_turn.slice(1);
+            timerInterval = setInterval(function() {
+                if (timeRemaining > 0) {
+                    timeRemaining -= 1;
+                    updateTimerDisplay();
+                } else {
+                    // Time's up, clear the interval and refresh the game state
+                    clearInterval(timerInterval);
+                    refreshGameState();
+                }
+            }, 1000);
+        }
+        
+        // Function to update the timer display
+        function updateTimerDisplay() {
+            document.getElementById('timeRemaining').textContent = timeRemaining;
             
-            // Update status
-            document.getElementById('gameStatus').textContent = game.status.charAt(0).toUpperCase() + game.status.slice(1);
-            
-            // Update game message
+            // Apply warning class if less than 10 seconds remaining
+            const timerElement = document.getElementById('timeRemaining');
+            if (timeRemaining <= 10) {
+                timerElement.classList.add('time-warning');
+            } else {
+                timerElement.classList.remove('time-warning');
+            }
+        }
+        
+        // Helper function to update game message
+        function updateGameMessage(game) {
             let message = '';
             if (game.status === 'active') {
                 if (game.is_check) {
@@ -239,32 +460,6 @@
                 message = `${game.winner} won by resignation`;
             }
             document.getElementById('gameMessage').textContent = message;
-            
-            // Update piece draggability
-            const isPlayerTurn = 
-                (isWhitePlayer && game.current_turn === 'white') || 
-                (isBlackPlayer && game.current_turn === 'black');
-            
-            board.set({
-                draggable: isPlayerTurn && game.status === 'active'
-            });
-            
-            // Highlight players based on current turn
-            document.querySelector('.white-player').classList.toggle('current-player', game.current_turn === 'white');
-            document.querySelector('.black-player').classList.toggle('current-player', game.current_turn === 'black');
-            
-            // Refresh move history
-            if (game.last_move) {
-                loadMoveHistory();
-            }
-            
-            // Hide control buttons if game is over
-            if (game.status !== 'active') {
-                document.getElementById('resignBtn').style.display = 'none';
-                document.getElementById('offerDrawBtn').style.display = 'none';
-                document.querySelector('.game-buttons').innerHTML = 
-                    '<a href="{{ url_for('profile') }}" class="btn btn-primary">Back to Profile</a>';
-            }
         }
         
         function loadMoveHistory() {
@@ -342,16 +537,72 @@
                 console.error('Error:', error);
             });
         }
+        
+        // Function to handle mouseover on squares
+        function onMouseoverSquare(square, piece) {
+            // Only highlight if we have a selected piece
+            if (!selectedPiece) return;
+            
+            // Don't highlight the source square
+            if (square === selectedPiece) return;
+            
+            // Get the square element
+            const squareElement = document.querySelector(`.square-55d63[data-square="${square}"]`);
+            if (!squareElement) return;
+            
+            // First remove any existing highlights
+            document.querySelectorAll('.square-55d63').forEach(function(sq) {
+                if (sq.getAttribute('data-square') !== selectedPiece) {
+                    sq.classList.remove('highlight-valid');
+                    sq.classList.remove('highlight-invalid');
+                }
+            });
+            
+            // Test if the move would be legal
+            const tempChess = new Chess(chess.fen());
+            const move = {
+                from: selectedPiece,
+                to: square,
+                promotion: 'q' // Default to queen for testing
+            };
+            
+            try {
+                const result = tempChess.move(move);
+                const isValidMove = result !== null;
+                
+                // Apply appropriate highlighting
+                if (isValidMove) {
+                    squareElement.classList.add('highlight-valid');
+                } else {
+                    squareElement.classList.add('highlight-invalid');
+                }
+            } catch (e) {
+                squareElement.classList.add('highlight-invalid');
+            }
+        }
+        
+        // Function to handle mouseout on squares
+        function onMouseoutSquare(square, piece) {
+            // Get the square element
+            const squareElement = document.querySelector(`.square-55d63[data-square="${square}"]`);
+            if (!squareElement) return;
+            
+            // Remove highlighting
+            squareElement.classList.remove('highlight-valid');
+            squareElement.classList.remove('highlight-invalid');
+        }
     });
 </script>
 {% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/chessboard-fixes.css') }}">
 <style>
     .chess-board-container {
         margin: 20px auto;
         max-width: 500px;
+        width: 100%;
     }
     
     .game-container {
@@ -438,6 +689,22 @@
         color: #888;
         text-align: center;
         padding: 10px;
+    }
+    
+    /* Timer styles */
+    #timeRemaining {
+        font-weight: bold;
+    }
+    
+    .time-warning {
+        color: red;
+        animation: blink 1s infinite;
+    }
+    
+    @keyframes blink {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
     }
 </style>
 {% endblock %} 

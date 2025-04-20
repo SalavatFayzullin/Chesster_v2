@@ -1,10 +1,9 @@
 from flask import request, jsonify
-from flask_login import current_user, login_required
+from flask_login import current_user
 from src.models.user import User, db
 from src.models.game import Game, ChessMove
 from src.services.game_service import GameService
 
-@login_required
 def start_game():
     """Start a new chess game"""
     data = request.get_json()
@@ -35,7 +34,6 @@ def start_game():
         }
     }), 201
 
-@login_required
 def get_game(game_id):
     """Get details of a specific game"""
     game = GameService.get_game(game_id)
@@ -49,13 +47,39 @@ def get_game(game_id):
     
     return jsonify({"game": game.get_game_state()}), 200
 
-@login_required
 def make_move(game_id):
     """Make a move in a chess game"""
-    data = request.get_json()
-    from_square = data.get('from_square')
-    to_square = data.get('to_square')
-    promotion = data.get('promotion')  # Optional
+    # Return error if user is not authenticated
+    if not current_user.is_authenticated:
+        return jsonify({"error": "Authentication required"}), 401
+        
+    # Log request data for debugging
+    print(f"[DEBUG] Request headers: {request.headers}")
+    print(f"[DEBUG] Request method: {request.method}")
+    print(f"[DEBUG] Content type: {request.content_type}")
+    print(f"[DEBUG] Raw request data: {request.get_data(as_text=True)}")
+    
+    try:
+        data = request.get_json(force=True)
+    except Exception as e:
+        print(f"[ERROR] JSON parsing error: {str(e)}")
+        return jsonify({"error": f"Invalid JSON format: {str(e)}"}), 400
+    
+    if not data:
+        print("[ERROR] Empty data after parsing JSON")
+        return jsonify({"error": "Empty data received"}), 400
+        
+    print(f"[DEBUG] Parsed JSON data: {data}")
+        
+    try:
+        from_square = data.get('from_square')
+        to_square = data.get('to_square')
+        promotion = data.get('promotion')  # Optional
+    except Exception as e:
+        print(f"[ERROR] Error accessing data fields: {str(e)}")
+        return jsonify({"error": f"Error accessing move data: {str(e)}"}), 400
+    
+    print(f"[DEBUG] Move data - from: {from_square}, to: {to_square}, promotion: {promotion}")
     
     # Validate input
     if not from_square or not to_square:
@@ -64,6 +88,10 @@ def make_move(game_id):
     # Validate square format (e.g., "e2", "e4")
     if not (len(from_square) == 2 and len(to_square) == 2):
         return jsonify({"error": "Invalid square format"}), 400
+    
+    # If promotion is empty string, set it to None
+    if promotion == "":
+        promotion = None
     
     # Make the move
     success, result = GameService.make_move(
@@ -75,7 +103,6 @@ def make_move(game_id):
     
     return jsonify({"game": result}), 200
 
-@login_required
 def resign_game(game_id):
     """Resign from a chess game"""
     success, result = GameService.resign_game(game_id, current_user.id)
@@ -85,7 +112,6 @@ def resign_game(game_id):
     
     return jsonify({"message": result}), 200
 
-@login_required
 def offer_draw(game_id):
     """Offer a draw in a chess game"""
     success, result = GameService.offer_draw(game_id, current_user.id)
@@ -95,7 +121,6 @@ def offer_draw(game_id):
     
     return jsonify({"message": result}), 200
 
-@login_required
 def get_active_games():
     """Get all active games for the current user"""
     games = GameService.get_active_games_for_user(current_user.id)
@@ -114,7 +139,6 @@ def get_active_games():
         ]
     }), 200
 
-@login_required
 def get_game_history():
     """Get completed games for the current user"""
     games = GameService.get_completed_games_for_user(current_user.id)
@@ -135,7 +159,6 @@ def get_game_history():
         ]
     }), 200
 
-@login_required
 def get_available_players():
     """Get list of players available for a new game"""
     users = User.query.filter(User.id != current_user.id).all()
@@ -151,7 +174,6 @@ def get_available_players():
         ]
     }), 200
 
-@login_required
 def get_game_moves(game_id):
     """Get all moves for a specific game"""
     game = GameService.get_game(game_id)
@@ -169,7 +191,6 @@ def get_game_moves(game_id):
         "moves": [move.to_dict() for move in moves]
     }), 200
 
-@login_required
 def join_game_queue():
     """Join the game queue or get matched immediately"""
     in_queue, opponent_id = GameService.join_game_queue(current_user.id)
@@ -201,7 +222,6 @@ def join_game_queue():
             "message": "You are already in the game queue"
         }), 200
 
-@login_required
 def check_queue_status():
     """Check for a match while in queue (long polling)"""
     try:
@@ -254,100 +274,33 @@ def check_queue_status():
                         "your_color": "white" if game.white_player_id == current_user.id else "black"
                     }
                 }), 200
-            else:
-                # This user joined first, check if a game was created already
-                recent_game = Game.query.filter(
-                    (((Game.white_player_id == current_user.id) & (Game.black_player_id == opponent_id)) |
-                     ((Game.white_player_id == opponent_id) & (Game.black_player_id == current_user.id))) &
-                    (Game.status == 'active')
-                ).order_by(Game.start_time.desc()).first()
-                
-                if recent_game:
-                    # Game has been created by the second player, return it
-                    return jsonify({
-                        "status": "matched",
-                        "message": "You've been matched with an opponent",
-                        "game": {
-                            "id": recent_game.id,
-                            "white_player": recent_game.white_player.username,
-                            "black_player": recent_game.black_player.username,
-                            "your_color": "white" if recent_game.white_player_id == current_user.id else "black"
-                        }
-                    }), 200
-                else:
-                    # Game hasn't been created yet, just report that we're matched
-                    return jsonify({
-                        "status": "matched",
-                        "message": "You've been matched with an opponent, waiting for game creation"
-                    }), 200
-        elif matched:
-            # User was matched previously or removed from queue
-            # Check if there's a recent active game
-            recent_game = Game.query.filter(
-                ((Game.white_player_id == current_user.id) | (Game.black_player_id == current_user.id)) &
-                (Game.status == 'active')
-            ).order_by(Game.start_time.desc()).first()
             
-            if recent_game:
-                return jsonify({
-                    "status": "matched",
-                    "message": "You've been matched with an opponent",
-                    "game": {
-                        "id": recent_game.id,
-                        "white_player": recent_game.white_player.username,
-                        "black_player": recent_game.black_player.username,
-                        "your_color": "white" if recent_game.white_player_id == current_user.id else "black"
-                    }
-                }), 200
-            
+            # Only report that we found a match but wait for other player to create game
             return jsonify({
-                "status": "not_in_queue",
-                "message": "You are no longer in the queue"
+                "status": "matching",
+                "message": "Found a potential opponent, waiting for confirmation..."
             }), 200
-        else:
-            # Still waiting
-            try:
-                in_queue, position = GameService.get_queue_status(current_user.id)
-                
-                if in_queue:
-                    return jsonify({
-                        "status": "waiting",
-                        "message": "Still waiting for a match",
-                        "position": position or 1  # Provide a default if position is None
-                    }), 200
-                else:
-                    return jsonify({
-                        "status": "not_in_queue",
-                        "message": "You are not in the queue"
-                    }), 200
-            except Exception as e:
-                # Handle any error in queue status
-                print(f"Error getting queue status: {str(e)}")
-                return jsonify({
-                    "status": "waiting",
-                    "message": "Still waiting for a match",
-                    "position": 1
-                }), 200
+        
+        # Still in queue, no match yet
+        return jsonify({
+            "status": "waiting",
+            "message": "Still waiting for an opponent..."
+        }), 200
+        
     except Exception as e:
         # Log the error
-        print(f"Error in check_queue_status: {str(e)}")
+        app.logger.error(f"Error checking queue status: {str(e)}")
         return jsonify({
             "status": "error",
             "message": "An error occurred while checking queue status"
         }), 500
 
-@login_required
 def leave_game_queue():
     """Leave the game queue"""
     success = GameService.leave_game_queue(current_user.id)
     
-    if success:
-        return jsonify({
-            "status": "success",
-            "message": "You have left the game queue"
-        }), 200
-    else:
-        return jsonify({
-            "status": "not_in_queue",
-            "message": "You were not in the game queue"
-        }), 200 
+    # Always return success, regardless of whether the user was in the queue or not
+    return jsonify({
+        "status": "success",
+        "message": "You've been removed from the game queue"
+    }), 200 
