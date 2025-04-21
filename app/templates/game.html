@@ -97,14 +97,14 @@
 <script src="{{ url_for('static', filename='js/chessboard-fix.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const gameId = {{ game.id }};
-        const isWhitePlayer = {{ 'true' if current_user.id == game.white_player_id else 'false' }};
-        const isBlackPlayer = {{ 'true' if current_user.id == game.black_player_id else 'false' }};
-        const isPlayerTurn = {{ 'true' if 
+        let gameId = {{ game.id }};
+        let isWhitePlayer = {{ 'true' if current_user.id == game.white_player_id else 'false' }};
+        let isBlackPlayer = {{ 'true' if current_user.id == game.black_player_id else 'false' }};
+        let isPlayerTurn = {{ 'true' if 
                                 (current_user.id == game.white_player_id and game.current_turn == 'white') or 
                                 (current_user.id == game.black_player_id and game.current_turn == 'black') 
                               else 'false' }};
-        const gameStatus = "{{ game.status }}";
+        let gameStatus = "{{ game.status }}";
         let board = null;
         let chess = null;
         let boardInitialized = false;
@@ -143,7 +143,7 @@
         // Initialize the board with error handling
         function initializeBoard() {
             try {
-                const config = {
+                let config = {
                     draggable: isPlayerTurn && gameStatus === 'active',
                     position: "{{ game.board_state }}",
                     orientation: isBlackPlayer ? 'black' : 'white',
@@ -178,6 +178,57 @@
                 boardInitialized = false;
             }
         }
+        
+        // Function to update board draggability based on current turn
+        function updateBoardDraggability(currentTurn, gameStatus) {
+            let newPlayerTurn = 
+                (isWhitePlayer && currentTurn === 'white') || 
+                (isBlackPlayer && currentTurn === 'black');
+            
+            // Only update if the turn changed
+            if (isPlayerTurn !== newPlayerTurn || currentGameStatus !== gameStatus) {
+                isPlayerTurn = newPlayerTurn;
+                currentGameStatus = gameStatus;
+                
+                // Reinitialize the board with new settings
+                try {
+                    let config = {
+                        draggable: isPlayerTurn && gameStatus === 'active',
+                        position: chess.fen(),
+                        orientation: isBlackPlayer ? 'black' : 'white',
+                        onDragStart: onDragStart,
+                        onDrop: onDrop,
+                        onMouseoverSquare: onMouseoverSquare,
+                        onMouseoutSquare: onMouseoutSquare,
+                        pieceTheme: '/static/img/pieces/{piece}.svg',
+                        responsive: true
+                    };
+                    
+                    // Clear existing board if it exists
+                    if (board !== null) {
+                        board.clear(false);
+                    }
+                    
+                    board = Chessboard('chessboard', config);
+                    
+                    // Make board globally accessible for the fix script
+                    window.board = board;
+                    
+                    // Apply the fix after updating the board
+                    if (typeof window.fixChessboard === 'function') {
+                        setTimeout(window.fixChessboard, 100);
+                    }
+                } catch (e) {
+                    console.error("Error updating board draggability:", e);
+                }
+            }
+        }
+        
+        // Initialize variables for board event handlers
+        window.onDragStart = onDragStart;
+        window.onDrop = onDrop;
+        window.onMouseoverSquare = onMouseoverSquare;
+        window.onMouseoutSquare = onMouseoutSquare;
         
         // Initialize board
         initializeBoard();
@@ -254,7 +305,7 @@
             }
             
             // Check if the move is legal
-            const move = {
+            let move = {
                 from: source,
                 to: target,
                 // Only include promotion when a pawn is moving to the last rank
@@ -262,11 +313,11 @@
             };
             
             // Check if move is valid locally
-            const legalMove = chess.move(move);
+            let legalMove = chess.move(move);
             if (!legalMove) return 'snapback';
             
             // Store the current position before submitting
-            const currentPosition = chess.fen();
+            let currentPosition = chess.fen();
             
             // Send move to server
             sendMove(source, target, legalMove.promotion, currentPosition);
@@ -289,7 +340,7 @@
         
         function sendMove(from, to, promotion, previousPosition) {
             // Make sure we're sending the move data in the exact format expected by the API
-            const moveData = {
+            let moveData = {
                 "from_square": from,
                 "to_square": to
             };
@@ -361,6 +412,22 @@
                     document.getElementById('gameStatus').textContent = 
                         data.game.status.charAt(0).toUpperCase() + data.game.status.slice(1);
                     
+                    // Check if it's the player's turn
+                    let newPlayerTurn = 
+                        (isWhitePlayer && data.game.current_turn === 'white') || 
+                        (isBlackPlayer && data.game.current_turn === 'black');
+                    
+                    // Update draggability if turn changed or game status changed
+                    if (isPlayerTurn !== newPlayerTurn || currentGameStatus !== data.game.status) {
+                        isPlayerTurn = newPlayerTurn;
+                        currentGameStatus = data.game.status;
+                        
+                        // Use the new helper function from chessboard-fix.js
+                        if (typeof window.updateChessboardDraggability === 'function') {
+                            window.updateChessboardDraggability(isPlayerTurn, data.game.status);
+                        }
+                    }
+                    
                     // Update timer and reset interval
                     if (data.game.status === 'active') {
                         // Clear existing timer
@@ -431,7 +498,7 @@
             document.getElementById('timeRemaining').textContent = timeRemaining;
             
             // Apply warning class if less than 10 seconds remaining
-            const timerElement = document.getElementById('timeRemaining');
+            let timerElement = document.getElementById('timeRemaining');
             if (timeRemaining <= 10) {
                 timerElement.classList.add('time-warning');
             } else {
@@ -446,7 +513,7 @@
                 if (game.is_check) {
                     message = 'Check!';
                 } else {
-                    const isCurrentPlayerTurn = 
+                    let isCurrentPlayerTurn = 
                         (isWhitePlayer && game.current_turn === 'white') || 
                         (isBlackPlayer && game.current_turn === 'black');
                     
@@ -466,21 +533,21 @@
             fetch(`/api/games/${gameId}/moves`)
             .then(response => response.json())
             .then(data => {
-                const movesList = document.getElementById('movesList');
+                let movesList = document.getElementById('movesList');
                 movesList.innerHTML = '';
                 
                 if (data.moves && data.moves.length > 0) {
                     data.moves.forEach((move, index) => {
-                        const moveNumber = Math.floor(index / 2) + 1;
-                        const isWhiteMove = index % 2 === 0;
+                        let moveNumber = Math.floor(index / 2) + 1;
+                        let isWhiteMove = index % 2 === 0;
                         
                         if (isWhiteMove) {
-                            const moveItem = document.createElement('div');
+                            let moveItem = document.createElement('div');
                             moveItem.className = 'move-item';
                             moveItem.innerHTML = `${moveNumber}. <span class="white-move">${move.notation}</span>`;
                             movesList.appendChild(moveItem);
                         } else {
-                            const lastMoveItem = movesList.lastChild;
+                            let lastMoveItem = movesList.lastChild;
                             lastMoveItem.innerHTML += ` <span class="black-move">${move.notation}</span>`;
                         }
                     });
@@ -540,56 +607,78 @@
         
         // Function to handle mouseover on squares
         function onMouseoverSquare(square, piece) {
-            // Only highlight if we have a selected piece
-            if (!selectedPiece) return;
-            
-            // Don't highlight the source square
-            if (square === selectedPiece) return;
+            // Only proceed if game is active and it's player's turn
+            if (gameStatus !== 'active' || !isPlayerTurn) return;
             
             // Get the square element
-            const squareElement = document.querySelector(`.square-55d63[data-square="${square}"]`);
+            let squareElement = document.querySelector(`.square-55d63[data-square="${square}"]`);
             if (!squareElement) return;
             
-            // First remove any existing highlights
+            // Clear any existing highlights first
             document.querySelectorAll('.square-55d63').forEach(function(sq) {
-                if (sq.getAttribute('data-square') !== selectedPiece) {
-                    sq.classList.remove('highlight-valid');
-                    sq.classList.remove('highlight-invalid');
-                }
+                sq.classList.remove('highlight-valid');
+                sq.classList.remove('highlight-invalid');
             });
             
-            // Test if the move would be legal
-            const tempChess = new Chess(chess.fen());
-            const move = {
-                from: selectedPiece,
-                to: square,
-                promotion: 'q' // Default to queen for testing
-            };
-            
-            try {
-                const result = tempChess.move(move);
-                const isValidMove = result !== null;
+            // Check if a piece is selected for moving
+            if (selectedPiece) {
+                // Don't highlight the source square
+                if (square === selectedPiece) return;
                 
-                // Apply appropriate highlighting
-                if (isValidMove) {
-                    squareElement.classList.add('highlight-valid');
-                } else {
+                // Test if the move would be legal
+                let tempChess = new Chess(chess.fen());
+                let move = {
+                    from: selectedPiece,
+                    to: square,
+                    promotion: 'q' // Default to queen for testing
+                };
+                
+                try {
+                    let result = tempChess.move(move);
+                    let isValidMove = result !== null;
+                    
+                    // Apply appropriate highlighting
+                    if (isValidMove) {
+                        squareElement.classList.add('highlight-valid');
+                    } else {
+                        squareElement.classList.add('highlight-invalid');
+                    }
+                } catch (e) {
                     squareElement.classList.add('highlight-invalid');
                 }
-            } catch (e) {
-                squareElement.classList.add('highlight-invalid');
+            } 
+            // If no piece is selected yet, only highlight squares with player's pieces
+            else if (piece) {
+                // Check if it's the player's piece based on color
+                let isPieceCorrectColor = 
+                    (isWhitePlayer && piece.search(/^w/) !== -1) || 
+                    (isBlackPlayer && piece.search(/^b/) !== -1);
+                
+                if (isPieceCorrectColor) {
+                    // Highlight square as valid (can be selected)
+                    squareElement.classList.add('highlight-valid');
+                    
+                    // Also highlight all possible moves for this piece
+                    let tempChess = new Chess(chess.fen());
+                    let moves = tempChess.moves({square: square, verbose: true});
+                    
+                    moves.forEach(function(move) {
+                        let targetSquare = document.querySelector(`.square-55d63[data-square="${move.to}"]`);
+                        if (targetSquare) {
+                            targetSquare.classList.add('highlight-valid');
+                        }
+                    });
+                }
             }
         }
         
         // Function to handle mouseout on squares
         function onMouseoutSquare(square, piece) {
-            // Get the square element
-            const squareElement = document.querySelector(`.square-55d63[data-square="${square}"]`);
-            if (!squareElement) return;
-            
-            // Remove highlighting
-            squareElement.classList.remove('highlight-valid');
-            squareElement.classList.remove('highlight-invalid');
+            // Remove all highlighting when mouse leaves a square
+            document.querySelectorAll('.square-55d63').forEach(function(sq) {
+                sq.classList.remove('highlight-valid');
+                sq.classList.remove('highlight-invalid');
+            });
         }
     });
 </script>

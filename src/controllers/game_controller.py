@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 from flask_login import current_user
 from src.models.user import User, db
 from src.models.game import Game, ChessMove
@@ -289,7 +289,7 @@ def check_queue_status():
         
     except Exception as e:
         # Log the error
-        app.logger.error(f"Error checking queue status: {str(e)}")
+        current_app.logger.error(f"Error checking queue status: {str(e)}")
         return jsonify({
             "status": "error",
             "message": "An error occurred while checking queue status"

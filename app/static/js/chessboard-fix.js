@@ -10,7 +10,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Function to fix chessboard alignment
     function fixChessboardAlignment() {
-        const chessboard = document.getElementById('chessboard');
+        let chessboard = document.getElementById('chessboard');
         if (!chessboard) return;
         
         // Check if the board has been properly initialized
@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chessboard.classList.add('fixed-chessboard');
         
         // More comprehensive fix for all elements
-        const style = document.createElement('style');
+        let style = document.createElement('style');
         style.innerHTML = `
             .fixed-chessboard {
                 width: 100% !important;
@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
         
         // Avoid adding duplicate styles
-        const existingStyle = document.querySelector('style[data-chess-fix="true"]');
+        let existingStyle = document.querySelector('style[data-chess-fix="true"]');
         if (!existingStyle) {
             style.setAttribute('data-chess-fix', 'true');
             document.head.appendChild(style);
@@ -76,7 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Function to add dragging events
     function setupDragEvents() {
         // Add mousedown event to all pieces
-        const pieces = document.querySelectorAll('.piece-417db');
+        let pieces = document.querySelectorAll('.piece-417db');
         pieces.forEach(function(piece) {
             piece.addEventListener('mousedown', function() {
                 document.body.classList.add('dragging-piece');
@@ -94,4 +94,41 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Add a global fix that can be called from game.html
     window.fixChessboard = fixChessboardAlignment;
+    
+    // Add function to update draggability based on current turn
+    window.updateChessboardDraggability = function(isPlayerTurn, gameStatus) {
+        if (!window.board) return;
+        
+        try {
+            // Create a new configuration with the updated draggable setting
+            let currentPosition = window.board.position();
+            let currentOrientation = window.board.orientation();
+            
+            // Get the original config functions if they exist
+            let onDragStart = window.onDragStart || function() { return false; };
+            let onDrop = window.onDrop || function() { return 'snapback'; };
+            let onMouseoverSquare = window.onMouseoverSquare || function() {};
+            let onMouseoutSquare = window.onMouseoutSquare || function() {};
+            
+            // Create a new config
+            let config = {
+                position: currentPosition,
+                orientation: currentOrientation,
+                draggable: isPlayerTurn && gameStatus === 'active',
+                onDragStart: onDragStart,
+                onDrop: onDrop,
+                onMouseoverSquare: onMouseoverSquare,
+                onMouseoutSquare: onMouseoutSquare,
+                pieceTheme: '/static/img/pieces/{piece}.svg'
+            };
+            
+            // Initialize a new board with the updated config
+            window.board = Chessboard('chessboard', config);
+            
+            // Apply the alignment fix after updating
+            setTimeout(fixChessboardAlignment, 100);
+        } catch (e) {
+            console.error('Error updating chessboard draggability:', e);
+        }
+    };
 }); 
